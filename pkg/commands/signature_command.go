@@ -24,13 +24,12 @@ func NewSignatureCommand() cli.Command {
 				Required: false,
 			},
 		},
-
 		Action: func(c *cli.Context) error {
-			inputFile := c.String("inputFile")
-			file, err := os.Open(inputFile)
+			file, err := getFile(c, "inputFile")
 			if err != nil {
-				return fmt.Errorf("unable to read input file '%s'. %w", inputFile, err)
+				return err
 			}
+			defer file.Close()
 
 			s := sync.New()
 
@@ -43,7 +42,7 @@ func NewSignatureCommand() cli.Command {
 				return fmt.Errorf("error while calculating signature. %w", err)
 			}
 
-			serializedChunks := fmt.Sprintf("%+v", chunkList) // TODO improve
+			serializedChunks := sync.SerializeChunks(chunkList)
 
 			if c.IsSet("outputFile") {
 				outputFile := c.String("outputFile")

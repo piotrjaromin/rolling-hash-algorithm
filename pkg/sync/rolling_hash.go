@@ -17,13 +17,13 @@ func InitRollingHash(data []byte) *rollingHash {
 
 	for i, val := range data {
 		a += uint32(val)
-		b += uint32(l-i+1) * uint32(val)
+		b += uint32(l-i) * uint32(val)
 	}
 
 	a = a % moduloVal
 	b = b % moduloVal
 
-	buffer := make([]byte, 0, len(data))
+	buffer := make([]byte, len(data))
 	copy(buffer, data)
 
 	return &rollingHash{
@@ -35,9 +35,8 @@ func InitRollingHash(data []byte) *rollingHash {
 }
 
 func (r *rollingHash) Add(b byte) {
-
 	r.a = (r.a - uint32(r.buffer[0]) + uint32(b)) % moduloVal
-	r.b = (r.b - r.l*uint32(r.buffer[0]) + r.a) % moduloVal
+	r.b = (r.b - (r.l)*uint32(r.buffer[0]) + r.a) % moduloVal
 
 	for i := 0; i < int(r.l)-1; i++ {
 		r.buffer[i] = r.buffer[i+1]

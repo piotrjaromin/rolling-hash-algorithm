@@ -18,12 +18,17 @@ type sync struct {
 }
 
 type Chunk struct {
-	Id          uint64
+	Id          int
 	RollingHash uint32
 	StrongHash  []byte
 }
 
 type ChunkHandler func(Chunk)
+
+type Delta struct {
+}
+
+type DeltaHandler func(Delta)
 
 func New() sync {
 	return sync{
@@ -71,4 +76,29 @@ func (r *sync) processChunk(rollingChunk []byte, handleChunks ChunkHandler) {
 		StrongHash:  r.hasher.Sum(nil),
 	})
 	r.hasher.Reset()
+}
+
+func (r *sync) Delta(data io.Reader, chunksReader io.Reader, handleDeltas DeltaHandler) error {
+	buffer := make([]byte, defaultBufferMultiplier*r.chunkSizeInBytes)
+
+	// chunks, err := deserializeChunks(chunksReader)
+	// if err != nil {
+	// 	return fmt.Errorf("unable to deserialize signature file. %w", err)
+	// }
+
+	for {
+		n, err := data.Read(buffer)
+
+		if n == 0 || err == io.EOF {
+			return nil
+		}
+
+		if err != nil {
+			return err
+		}
+
+		// for i := 0; i < n-r.chunkSizeInBytes; i += 1 {
+
+		// }
+	}
 }

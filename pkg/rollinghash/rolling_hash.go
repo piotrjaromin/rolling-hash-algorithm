@@ -1,15 +1,15 @@
-package sync
+package rollinghash
 
 const moduloVal uint32 = 1 << 16
 
-type rollingHash struct {
+type RollingHash struct {
 	buffer []byte
 	a      uint32
 	b      uint32
 	l      uint32
 }
 
-func InitRollingHash(data []byte) *rollingHash {
+func InitRollingHash(data []byte) *RollingHash {
 	l := len(data)
 
 	var a uint32 = 0
@@ -26,7 +26,7 @@ func InitRollingHash(data []byte) *rollingHash {
 	buffer := make([]byte, len(data))
 	copy(buffer, data)
 
-	return &rollingHash{
+	return &RollingHash{
 		buffer: buffer,
 		a:      uint32(a),
 		b:      uint32(b),
@@ -34,7 +34,7 @@ func InitRollingHash(data []byte) *rollingHash {
 	}
 }
 
-func (r *rollingHash) Add(b byte) {
+func (r *RollingHash) Add(b byte) {
 	r.a = (r.a - uint32(r.buffer[0]) + uint32(b)) % moduloVal
 	r.b = (r.b - (r.l)*uint32(r.buffer[0]) + r.a) % moduloVal
 
@@ -45,7 +45,7 @@ func (r *rollingHash) Add(b byte) {
 	r.buffer[r.l-1] = b
 }
 
-func (r rollingHash) Hash() uint32 {
+func (r RollingHash) Hash() uint32 {
 	s := r.a + moduloVal*r.b
 	return s
 }

@@ -1,4 +1,4 @@
-package sync
+package rollinghash
 
 import (
 	"testing"
@@ -21,17 +21,17 @@ func Test_RollingHashHasCorrectValueForDifferentInputs(t *testing.T) {
 		{
 			"returns correct value for ones",
 			[]byte{1, 1, 1, 1},
-			917508,
+			655364,
 		},
 		{
 			"returns correct value for ordered numbers",
 			[]byte{1, 2, 3, 4},
-			1966090,
+			1310730,
 		},
 		{
 			"returns correct value for max byte val",
 			[]byte{255, 255, 255, 255},
-			233964540,
+			167117820,
 		},
 	}
 
@@ -50,11 +50,10 @@ func Test_AddInRollInChangesHash(t *testing.T) {
 	h := InitRollingHash(input)
 	h.Add(toRollin)
 
-	assert.Equal(t, 50, h.Hash())
+	assert.Equal(t, uint32(46072244), h.Hash())
 }
 
 func Test_RolledInHashShouldEqualInitialForSameData(t *testing.T) {
-
 	input1 := []byte{34, 23, 34, 234}
 	var toRollin1 byte = 20
 	input2 := append(input1[1:], toRollin1)

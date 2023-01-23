@@ -2,49 +2,47 @@ package sync
 
 import (
 	"bytes"
+
+	// using gob for simplicity, but we could also write bytes directly (Takes less space)
+	"encoding/gob"
 	"io"
-	"io/ioutil"
 )
 
 const byteBase = 16 * 16
-const weakHashSizeInBytes = 4
-const strongHashSizeInBytes = 16
-const chunkSizeInBytes = weakHashSizeInBytes + strongHashSizeInBytes
 
-func deserializeChunks(chunksReader io.Reader) ([]Chunk, error) {
+func DeserializeChunks(chunksReader io.Reader) (map[uint32][]Chunk, error) {
+	mappedChunks := map[uint32][]Chunk{}
 	chunks := []Chunk{}
 
-	chunksRaw, err := ioutil.ReadAll(chunksReader)
+	enc := gob.NewDecoder(chunksReader)
+
+	err := enc.Decode(&chunks)
 	if err != nil {
-		return chunks, err
+		return mappedChunks, err
 	}
-
-	index := 0
-	for i := 0; i < len(chunksRaw); i += chunkSizeInBytes {
-		weakHashEnd := i + weakHashSizeInBytes
-		rollingHashBytes := bytesToUint32(chunksRaw[i:weakHashEnd])
-		strongHashBytes := chunksRaw[weakHashEnd : weakHashEnd+strongHashSizeInBytes]
-
-		chunks = append(chunks, Chunk{
-			Id:          index,
-			StrongHash:  strongHashBytes,
-			RollingHash: rollingHashBytes,
-		})
-		index++
-	}
-
-	return chunks, nil
-}
-
-func SerializeChunks(chunks []Chunk) []byte {
-	b := new(bytes.Buffer)
 
 	for _, chunk := range chunks {
-		b.Write(uint32ToBytes(chunk.RollingHash))
-		b.Write(chunk.StrongHash)
+		listOfChunks, ok := mappedChunks[chunk.RollingHash]
+		if !ok {
+			mappedChunks[chunk.RollingHash] = append(listOfChunks, chunk)
+		} else {
+			mappedChunks[chunk.RollingHash] = []Chunk{chunk}
+		}
 	}
 
-	return b.Bytes()
+	return mappedChunks, nil
+}
+
+func SerializeChunks(chunks []Chunk) ([]byte, error) {
+	var buffer bytes.Buffer
+	enc := gob.NewEncoder(&buffer)
+
+	err := enc.Encode(chunks)
+	if err != nil {
+		return []byte{}, err
+	}
+
+	return buffer.Bytes(), nil
 }
 
 func uint32ToBytes(val uint32) []byte {

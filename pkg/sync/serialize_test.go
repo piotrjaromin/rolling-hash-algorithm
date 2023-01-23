@@ -19,7 +19,7 @@ func Test_BytesToUint32ShouldConvertCorrectly(t *testing.T) {
 
 	val := bytesToUint32(bytes)
 
-	assert.Equal(t, uint32(83712), val)
+	assert.Equal(t, uint32(54263562), val)
 }
 
 func Test_ByteAndUint32ConversionShouldWorkBothWays(t *testing.T) {
@@ -45,10 +45,16 @@ func Test_ChunksSerializationShouldWorkBothWays(t *testing.T) {
 		},
 	}
 
-	data := SerializeChunks(chunks)
-	newChunks, err := deserializeChunks(bytes.NewReader(data))
+	data, err := SerializeChunks(chunks)
+	assert.Nil(t, err)
+
+	readChunks, err := DeserializeChunks(bytes.NewReader(data))
 
 	assert.Nil(t, err)
 
-	assert.Equal(t, chunks, newChunks)
+	expected := map[uint32][]Chunk{
+		83712: {chunks[0]},
+		12343: {chunks[1]},
+	}
+	assert.Equal(t, expected, readChunks)
 }

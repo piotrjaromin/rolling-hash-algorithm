@@ -19,6 +19,9 @@ const defaultBufferMultiplier = 32
 type sync struct {
 	chunkSizeInBytes int
 	hasher           hash.Hash
+	// instead of relaying on struct we should expect interface as rollingHash
+	// so in future we could easily replace implementation
+	rHash *rollinghash.RollingHash
 }
 
 type Chunk struct {
@@ -32,7 +35,7 @@ type ChunkHandler func(Chunk)
 type Operation byte
 
 const (
-	Nop Operation = iota
+	Init Operation = iota
 	NewData
 	ExistingData
 )
@@ -49,6 +52,7 @@ func New() sync {
 	return sync{
 		chunkSizeInBytes: defaultChunkSize,
 		hasher:           crypto.MD4.New(),
+		rHash:            rollinghash.New(uint32(defaultChunkSize)),
 	}
 }
 
@@ -71,15 +75,17 @@ func (r *sync) Signature(data io.Reader, handleChunks ChunkHandler) error {
 		}
 
 		// iterate until we run out of data
-		for i := 0; i < n-r.chunkSizeInBytes; i += r.chunkSizeInBytes {
+		i := 0
+		for i < n-r.chunkSizeInBytes {
 			rollingChunk := buffer[i : i+r.chunkSizeInBytes]
 			r.processChunk(chunkIndex, rollingChunk, handleChunks)
 			chunkIndex++
+			i += r.chunkSizeInBytes
 		}
 
-		bytesLeft := n % r.chunkSizeInBytes
+		bytesLeft := n - i
 		if bytesLeft > 0 {
-			rollingChunk := buffer[n : n+bytesLeft]
+			rollingChunk := buffer[i : i+bytesLeft]
 			r.processChunk(chunkIndex, rollingChunk, handleChunks)
 			chunkIndex++
 		}
@@ -87,7 +93,7 @@ func (r *sync) Signature(data io.Reader, handleChunks ChunkHandler) error {
 }
 
 func (r *sync) processChunk(chunkIndex uint32, rollingChunk []byte, handleChunks ChunkHandler) {
-	rHash := rollinghash.InitRollingHash(rollingChunk).Hash()
+	rHash := rollinghash.New(uint32(r.chunkSizeInBytes)).AddBuffer(rollingChunk).Hash()
 
 	r.hasher.Write(rollingChunk)
 	handleChunks(Chunk{
@@ -109,64 +115,43 @@ func (r *sync) Delta(data io.Reader, chunksReader io.Reader, handleDeltas DeltaH
 	chunks := chunksListToMap(chunksList)
 	r.hasher.Reset()
 
-	// instead of relaying on struct we should expect interface as rollingHash
-	// so in future we could easily replace implementation
-	var rHash *rollinghash.RollingHash = nil
 	// we read in chunks, it maybe that we cannot proce
 	bytesLeft := 0
 
+	lastOperation := Init // Used to init rHash
 	deltaIndex := 0
 	for {
 		n, err := data.Read(buffer[bytesLeft:])
 
 		if n == 0 || err == io.EOF {
-			return nil
+			break
 		}
 
 		if err != nil {
 			return err
 		}
 
-		if rHash == nil {
-			// TODO if buffer is too small this will fail
-			initChunk := buffer[:r.chunkSizeInBytes]
-			rHash = rollinghash.InitRollingHash(initChunk)
-		}
-
 		i := 0
 		for i < n-r.chunkSizeInBytes {
-			foundStrongHashMatch := false
-			fromChunks, ok := chunks[rHash.Hash()]
-			if ok {
-				r.hasher.Write(buffer[i : i+r.chunkSizeInBytes])
-				strongHash := r.hasher.Sum(nil)
-				foundStrongHashMatch = handleStrongHashCheck(fromChunks, strongHash, deltaIndex, handleDeltas)
-				r.hasher.Reset()
-			}
-
-			if foundStrongHashMatch {
-				rHash.AddBuffer(buffer[i : i+r.chunkSizeInBytes])
-				i += r.chunkSizeInBytes
-			} else {
-				// if no match then send new bytes to be added to file
-				handleDeltas(Delta{
-					Operation: NewData,
-					Data:      []byte{buffer[i]},
-				})
-
-				i += 1
-				rHash.Add(buffer[i])
-			}
+			i += r.processBytes(
+				lastOperation, i, buffer, chunks, deltaIndex, handleDeltas,
+			)
 
 			deltaIndex += 1
 		}
 
 		// we need bytes from next chunk to process this
-		bytesLeft = n % r.chunkSizeInBytes
+		bytesLeft = n - i
 		for i := 0; i < bytesLeft; i++ {
 			buffer[i] = buffer[n-bytesLeft+i]
 		}
 	}
+
+	r.processBytes(
+		lastOperation, 0, buffer[:bytesLeft], chunks, deltaIndex, handleDeltas,
+	)
+
+	return nil
 }
 
 func chunksListToMap(chunks []Chunk) map[uint32][]Chunk {
@@ -182,6 +167,45 @@ func chunksListToMap(chunks []Chunk) map[uint32][]Chunk {
 	}
 
 	return mappedChunks
+}
+
+// TODO better name....
+func (r *sync) processBytes(
+	lastOperation Operation, i int, buffer []byte,
+	chunks map[uint32][]Chunk, deltaIndex int, handleDeltas DeltaHandler,
+) int {
+	chunkSize := r.chunkSizeInBytes
+	if len(buffer) < r.chunkSizeInBytes {
+		chunkSize = len(buffer) //
+	}
+
+	foundStrongHashMatch := false
+
+	if lastOperation == ExistingData || lastOperation == Init {
+		r.rHash.AddBuffer(buffer[i : i+chunkSize])
+	} else {
+		r.rHash.Add(buffer[i])
+	}
+
+	fromChunks, ok := chunks[r.rHash.Hash()]
+	if ok {
+		r.hasher.Write(buffer[i : i+chunkSize])
+		strongHash := r.hasher.Sum(nil)
+		foundStrongHashMatch = handleStrongHashCheck(fromChunks, strongHash, deltaIndex, handleDeltas)
+		r.hasher.Reset()
+	}
+
+	if foundStrongHashMatch {
+		return chunkSize
+	} else {
+		// if no match then send new bytes to be added to file
+		handleDeltas(Delta{
+			Operation: NewData,
+			Data:      []byte{buffer[i]},
+		})
+
+		return 1
+	}
 }
 
 func handleStrongHashCheck(fromChunks []Chunk, strongHash []byte, deltaIndex int, handleDeltas DeltaHandler) bool {

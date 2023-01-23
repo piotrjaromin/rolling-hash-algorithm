@@ -73,3 +73,51 @@ func Test_RolledInHashShouldEqualInitialForSameData(t *testing.T) {
 
 	assert.Equal(t, h3.Hash(), h1.Hash())
 }
+
+func Test_AddBufferHashShouldEqualInitialForSameData(t *testing.T) {
+	input1 := []byte{34, 23, 34, 234}
+	var toRollin1 byte = 20
+	var toRollin2 byte = 235
+
+	h1 := InitRollingHash(input1)
+	h1.AddBuffer([]byte{toRollin1, toRollin2})
+
+	input2 := append(input1[2:], toRollin1, toRollin2)
+
+	h2 := InitRollingHash(input2)
+
+	assert.Equal(t, h2.Hash(), h1.Hash())
+}
+
+func Test_ReturnsDifferentValuesForDifferentInputs(t *testing.T) {
+	input1 := []byte{34, 23, 34, 234}
+	input2 := []byte{10, 23, 34, 43}
+
+	h1 := InitRollingHash(input1)
+	h2 := InitRollingHash(input2)
+
+	assert.NotEqual(t, h2.Hash(), h1.Hash())
+}
+
+func Test_ReturnsDifferentValuesAfterAddWasCalled(t *testing.T) {
+	input1 := []byte{34, 23, 34, 234}
+
+	h1 := InitRollingHash(input1)
+
+	initHash := h1.Hash()
+	h1.Add(23)
+
+	assert.NotEqual(t, initHash, h1.Hash())
+}
+
+func Test_ReturnsDifferentValuesAfterAddBufferWasCalled(t *testing.T) {
+	input1 := []byte{34, 23, 34, 234}
+
+	h1 := InitRollingHash(input1)
+
+	initHash := h1.Hash()
+	h1.AddBuffer([]byte{23, 10, 15})
+
+	secondHash := h1.Hash()
+	assert.NotEqual(t, initHash, secondHash)
+}

@@ -1,7 +1,6 @@
 package sync
 
 import (
-	"bytes"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -45,16 +44,12 @@ func Test_ChunksSerializationShouldWorkBothWays(t *testing.T) {
 		},
 	}
 
-	data, err := SerializeChunks(chunks)
+	reader, err := SerializeChunks(chunks)
 	assert.Nil(t, err)
 
-	readChunks, err := DeserializeChunks(bytes.NewReader(data))
+	readChunks, err := DeserializeChunks(reader)
 
 	assert.Nil(t, err)
 
-	expected := map[uint32][]Chunk{
-		83712: {chunks[0]},
-		12343: {chunks[1]},
-	}
-	assert.Equal(t, expected, readChunks)
+	assert.Equal(t, chunks, readChunks)
 }

@@ -10,39 +10,28 @@ import (
 
 const byteBase = 16 * 16
 
-func DeserializeChunks(chunksReader io.Reader) (map[uint32][]Chunk, error) {
-	mappedChunks := map[uint32][]Chunk{}
+func DeserializeChunks(chunksReader io.Reader) ([]Chunk, error) {
 	chunks := []Chunk{}
 
 	enc := gob.NewDecoder(chunksReader)
-
 	err := enc.Decode(&chunks)
 	if err != nil {
-		return mappedChunks, err
+		return chunks, err
 	}
 
-	for _, chunk := range chunks {
-		listOfChunks, ok := mappedChunks[chunk.RollingHash]
-		if !ok {
-			mappedChunks[chunk.RollingHash] = append(listOfChunks, chunk)
-		} else {
-			mappedChunks[chunk.RollingHash] = []Chunk{chunk}
-		}
-	}
-
-	return mappedChunks, nil
+	return chunks, nil
 }
 
-func SerializeChunks(chunks []Chunk) ([]byte, error) {
+func SerializeChunks(chunks []Chunk) (io.Reader, error) {
 	var buffer bytes.Buffer
 	enc := gob.NewEncoder(&buffer)
 
 	err := enc.Encode(chunks)
 	if err != nil {
-		return []byte{}, err
+		return nil, err
 	}
 
-	return buffer.Bytes(), nil
+	return &buffer, nil
 }
 
 func uint32ToBytes(val uint32) []byte {

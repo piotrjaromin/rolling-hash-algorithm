@@ -45,7 +45,13 @@ func (r *RollingHash) Add(b byte) {
 	r.buffer[r.l-1] = b
 }
 
-func (r RollingHash) Hash() uint32 {
+func (r *RollingHash) AddBuffer(data []byte) {
+	for _, b := range data {
+		r.Add(b)
+	}
+}
+
+func (r *RollingHash) Hash() uint32 {
 	s := r.a + moduloVal*r.b
 	return s
 }

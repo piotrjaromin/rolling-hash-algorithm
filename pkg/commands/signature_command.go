@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"io/ioutil"
 	"os"
 
 	"github.com/piotrjaromin/rolling-hash-algorithm/pkg/sync"
@@ -42,11 +43,20 @@ func NewSignatureCommand() cli.Command {
 				return fmt.Errorf("error while calculating signature. %w", err)
 			}
 
-			serializedChunks := sync.SerializeChunks(chunkList)
+			serializedChunksReader, err := sync.SerializeChunks(chunkList)
+			if err != nil {
+				return fmt.Errorf("unable to serialize data chunks. %w", err)
+			}
+
+			serializedChunks, err := ioutil.ReadAll(serializedChunksReader)
+			if err != nil {
+				return fmt.Errorf("unable to read serialized data chunks. %w", err)
+			}
 
 			if c.IsSet("outputFile") {
 				outputFile := c.String("outputFile")
-				return os.WriteFile(outputFile, []byte(serializedChunks), os.ModePerm)
+
+				return os.WriteFile(outputFile, serializedChunks, os.ModePerm)
 			}
 
 			fmt.Print(serializedChunks)

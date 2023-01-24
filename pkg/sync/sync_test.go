@@ -2,8 +2,8 @@ package sync
 
 import (
 	"bytes"
-	"fmt"
 	"io"
+	"math"
 	"math/rand"
 	"testing"
 
@@ -67,14 +67,13 @@ func Test_Signature(t *testing.T) {
 				chunks = append(chunks, c)
 			})
 
-			fmt.Printf("%+v\n\n", chunks)
 			assert.Equal(t, test.expected, chunks)
 		})
 	}
 }
 
 func Test_DeltaReturnsNoChangesWhenNewFileIsTheSameAsOld(t *testing.T) {
-	dataSize := 20_002
+	dataSize := 20002
 	data, dataReader := dataGenerateRandom(dataSize)
 
 	chunks := []Chunk{}
@@ -87,14 +86,15 @@ func Test_DeltaReturnsNoChangesWhenNewFileIsTheSameAsOld(t *testing.T) {
 	chunksAsBytes, err := SerializeChunks(chunks)
 	assert.Nil(t, err)
 
-	expectedOperationId := 0
+	var currentOperationId uint32
 	s.Delta(bytes.NewReader(data), chunksAsBytes, func(d Delta) {
-		assert.Equal(t, ExistingData, d.Operation)
-		assert.Equal(t, expectedOperationId, d.Id)
-		expectedOperationId += 1
+		assert.Equal(t, ExistingData, d.Operation, "Invalid operation for operation id: %d", currentOperationId)
+		require.Equal(t, currentOperationId, d.Id, "Mismatch with expected operation id")
+		currentOperationId += 1
 	})
 
-	assert.Equal(t, 1211, expectedOperationId)
+	expectedLastOperationId := uint32(math.Ceil(float64(dataSize) / defaultChunkSize))
+	assert.Equal(t, expectedLastOperationId, currentOperationId, "expected %d to be %d", currentOperationId, expectedLastOperationId)
 }
 
 func Test_PassesForFilesSmallerThankChunkSize(t *testing.T) {
@@ -115,15 +115,15 @@ func Test_PassesForFilesSmallerThankChunkSize(t *testing.T) {
 	chunksAsBytes, err := SerializeChunks(chunks)
 	assert.Nil(t, err)
 
-	expectedOperationId := 0
+	var expectedOperationId uint32
 	s.Delta(sameDataReader, chunksAsBytes, func(d Delta) {
-		require.Equal(t, ExistingData, d.Operation)
-		require.Equal(t, expectedOperationId, d.Id)
+		assert.Equal(t, ExistingData, d.Operation, "Invalid operation for operation id: %d", expectedOperationId)
+		require.Equal(t, expectedOperationId, d.Id, "Mismatch with expected operation id")
 		require.Equal(t, chunks[0].Id, bytesToUint32(d.Data))
 		expectedOperationId += 1
 	})
 
-	require.Equal(t, 1, expectedOperationId)
+	require.Equal(t, uint32(1), expectedOperationId)
 }
 
 func Test_DeltaInformsThatFileWasPrependedWithNewData(t *testing.T) {

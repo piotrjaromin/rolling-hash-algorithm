@@ -14,7 +14,7 @@ import (
 
 // not efficient size but for simplicity
 const defaultChunkSize = 16
-const defaultBufferMultiplier = 32
+const defaultBufferMultiplier = 3
 
 type sync struct {
 	chunkSizeInBytes int
@@ -41,7 +41,7 @@ const (
 )
 
 type Delta struct {
-	Id        int
+	Id        uint32
 	Operation Operation
 	Data      []byte
 }
@@ -61,13 +61,15 @@ func (r *sync) Signature(data io.Reader, handleChunks ChunkHandler) error {
 	// but hashing will take into consideration only r.chunkSizeInBytes
 	buffer := make([]byte, defaultBufferMultiplier*r.chunkSizeInBytes)
 	r.hasher.Reset()
+	r.rHash.Reset()
 
+	bytesLeft := 0
 	var chunkIndex uint32 = 0
 	for {
-		n, err := data.Read(buffer)
+		n, err := data.Read(buffer[bytesLeft:])
 
 		if n == 0 || err == io.EOF {
-			return nil
+			break
 		}
 
 		if err != nil {
@@ -76,24 +78,27 @@ func (r *sync) Signature(data io.Reader, handleChunks ChunkHandler) error {
 
 		// iterate until we run out of data
 		i := 0
-		for i < n-r.chunkSizeInBytes {
+		for i <= n-r.chunkSizeInBytes {
 			rollingChunk := buffer[i : i+r.chunkSizeInBytes]
 			r.processChunk(chunkIndex, rollingChunk, handleChunks)
 			chunkIndex++
 			i += r.chunkSizeInBytes
 		}
 
-		bytesLeft := n - i
-		if bytesLeft > 0 {
-			rollingChunk := buffer[i : i+bytesLeft]
-			r.processChunk(chunkIndex, rollingChunk, handleChunks)
-			chunkIndex++
+		// we need bytes from next chunk to process this
+		bytesLeft = n - i
+		for i := 0; i < bytesLeft; i++ {
+			buffer[i] = buffer[n-bytesLeft+i]
 		}
+
 	}
+
+	r.processChunk(chunkIndex, buffer[:bytesLeft], handleChunks)
+	return nil
 }
 
 func (r *sync) processChunk(chunkIndex uint32, rollingChunk []byte, handleChunks ChunkHandler) {
-	rHash := rollinghash.New(uint32(r.chunkSizeInBytes)).AddBuffer(rollingChunk).Hash()
+	rHash := r.rHash.AddBuffer(rollingChunk).Hash()
 
 	r.hasher.Write(rollingChunk)
 	handleChunks(Chunk{
@@ -114,12 +119,14 @@ func (r *sync) Delta(data io.Reader, chunksReader io.Reader, handleDeltas DeltaH
 
 	chunks := chunksListToMap(chunksList)
 	r.hasher.Reset()
+	r.rHash.Reset()
 
 	// we read in chunks, it maybe that we cannot proce
 	bytesLeft := 0
 
 	lastOperation := Init // Used to init rHash
-	deltaIndex := 0
+	var deltaIndex uint32 = 0
+
 	for {
 		n, err := data.Read(buffer[bytesLeft:])
 
@@ -132,11 +139,13 @@ func (r *sync) Delta(data io.Reader, chunksReader io.Reader, handleDeltas DeltaH
 		}
 
 		i := 0
-		for i < n-r.chunkSizeInBytes {
-			i += r.processBytes(
+		for i <= n-r.chunkSizeInBytes {
+			bytesProcessed, operation := r.processBytesForDelta(
 				lastOperation, i, buffer, chunks, deltaIndex, handleDeltas,
 			)
 
+			lastOperation = operation
+			i += bytesProcessed
 			deltaIndex += 1
 		}
 
@@ -147,7 +156,7 @@ func (r *sync) Delta(data io.Reader, chunksReader io.Reader, handleDeltas DeltaH
 		}
 	}
 
-	r.processBytes(
+	r.processBytesForDelta(
 		lastOperation, 0, buffer[:bytesLeft], chunks, deltaIndex, handleDeltas,
 	)
 
@@ -170,17 +179,16 @@ func chunksListToMap(chunks []Chunk) map[uint32][]Chunk {
 }
 
 // TODO better name....
-func (r *sync) processBytes(
+func (r *sync) processBytesForDelta(
 	lastOperation Operation, i int, buffer []byte,
-	chunks map[uint32][]Chunk, deltaIndex int, handleDeltas DeltaHandler,
-) int {
+	chunks map[uint32][]Chunk, deltaIndex uint32, handleDeltas DeltaHandler,
+) (int, Operation) {
 	chunkSize := r.chunkSizeInBytes
 	if len(buffer) < r.chunkSizeInBytes {
 		chunkSize = len(buffer) //
 	}
 
 	foundStrongHashMatch := false
-
 	if lastOperation == ExistingData || lastOperation == Init {
 		r.rHash.AddBuffer(buffer[i : i+chunkSize])
 	} else {
@@ -196,19 +204,20 @@ func (r *sync) processBytes(
 	}
 
 	if foundStrongHashMatch {
-		return chunkSize
+		return chunkSize, ExistingData
 	} else {
 		// if no match then send new bytes to be added to file
 		handleDeltas(Delta{
+			Id:        deltaIndex,
 			Operation: NewData,
 			Data:      []byte{buffer[i]},
 		})
 
-		return 1
+		return 1, NewData
 	}
 }
 
-func handleStrongHashCheck(fromChunks []Chunk, strongHash []byte, deltaIndex int, handleDeltas DeltaHandler) bool {
+func handleStrongHashCheck(fromChunks []Chunk, strongHash []byte, deltaIndex uint32, handleDeltas DeltaHandler) bool {
 	// iterate over list and check for strong hash
 	for _, chunk := range fromChunks {
 

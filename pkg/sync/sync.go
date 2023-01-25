@@ -3,6 +3,7 @@ package sync
 import (
 	"bytes"
 	"crypto"
+	"encoding/hex"
 	"fmt"
 	"hash"
 	"io"
@@ -59,7 +60,8 @@ func New() sync {
 func (r *sync) Signature(data io.Reader, handleChunks ChunkHandler) error {
 	// we will read more bytes
 	// but hashing will take into consideration only r.chunkSizeInBytes
-	buffer := make([]byte, defaultBufferMultiplier*r.chunkSizeInBytes)
+	fullBufferSize := defaultBufferMultiplier * r.chunkSizeInBytes
+	buffer := make([]byte, fullBufferSize)
 	r.hasher.Reset()
 	r.rHash.Reset()
 
@@ -93,7 +95,9 @@ func (r *sync) Signature(data io.Reader, handleChunks ChunkHandler) error {
 
 	}
 
-	r.processChunk(chunkIndex, buffer[:bytesLeft], handleChunks)
+	if bytesLeft > 0 {
+		r.processChunk(chunkIndex, buffer[:bytesLeft], handleChunks)
+	}
 	return nil
 }
 
@@ -110,14 +114,14 @@ func (r *sync) processChunk(chunkIndex uint32, rollingChunk []byte, handleChunks
 }
 
 func (r *sync) Delta(data io.Reader, chunksReader io.Reader, handleDeltas DeltaHandler) error {
-	buffer := make([]byte, defaultBufferMultiplier*r.chunkSizeInBytes)
-
 	chunksList, err := DeserializeChunks(chunksReader)
 	if err != nil {
 		return fmt.Errorf("unable to deserialize signature file. %w", err)
 	}
-
 	chunks := chunksListToMap(chunksList)
+
+	fullBufferSize := defaultBufferMultiplier * r.chunkSizeInBytes
+	buffer := make([]byte, fullBufferSize)
 	r.hasher.Reset()
 	r.rHash.Reset()
 
@@ -129,7 +133,6 @@ func (r *sync) Delta(data io.Reader, chunksReader io.Reader, handleDeltas DeltaH
 
 	for {
 		n, err := data.Read(buffer[bytesLeft:])
-
 		if n == 0 || err == io.EOF {
 			break
 		}
@@ -139,26 +142,41 @@ func (r *sync) Delta(data io.Reader, chunksReader io.Reader, handleDeltas DeltaH
 		}
 
 		i := 0
+		// n should be total of available bytes
+		n = bytesLeft + n
 		for i <= n-r.chunkSizeInBytes {
 			bytesProcessed, operation := r.processBytesForDelta(
-				lastOperation, i, buffer, chunks, deltaIndex, handleDeltas,
+				lastOperation, buffer[i:i+r.chunkSizeInBytes], chunks, deltaIndex, handleDeltas,
 			)
 
 			lastOperation = operation
 			i += bytesProcessed
+
 			deltaIndex += 1
 		}
 
-		// we need bytes from next chunk to process this
 		bytesLeft = n - i
-		for i := 0; i < bytesLeft; i++ {
-			buffer[i] = buffer[n-bytesLeft+i]
+
+		// Two scenarios
+		// 1. reading data, this is last iteration and there is leftover
+		// 2. first iteration with chunk smaller than whole thing
+		for j := 0; j < bytesLeft; j++ {
+			buffer[j] = buffer[i+j]
 		}
 	}
 
-	r.processBytesForDelta(
-		lastOperation, 0, buffer[:bytesLeft], chunks, deltaIndex, handleDeltas,
-	)
+	// process left over bytes, kind of copy-paste of above
+	// probably could be moved into above loop
+	i := 0
+	for i < bytesLeft {
+		bytesProcessed, operation := r.processBytesForDelta(
+			lastOperation, buffer[i:bytesLeft], chunks, deltaIndex, handleDeltas,
+		)
+
+		lastOperation = operation
+		i += bytesProcessed
+		deltaIndex += 1
+	}
 
 	return nil
 }
@@ -180,24 +198,21 @@ func chunksListToMap(chunks []Chunk) map[uint32][]Chunk {
 
 // TODO better name....
 func (r *sync) processBytesForDelta(
-	lastOperation Operation, i int, buffer []byte,
+	lastOperation Operation, buffer []byte,
 	chunks map[uint32][]Chunk, deltaIndex uint32, handleDeltas DeltaHandler,
 ) (int, Operation) {
-	chunkSize := r.chunkSizeInBytes
-	if len(buffer) < r.chunkSizeInBytes {
-		chunkSize = len(buffer) //
-	}
+	chunkSize := len(buffer)
 
 	foundStrongHashMatch := false
 	if lastOperation == ExistingData || lastOperation == Init {
-		r.rHash.AddBuffer(buffer[i : i+chunkSize])
+		r.rHash.AddBuffer(buffer)
 	} else {
-		r.rHash.Add(buffer[i])
+		r.rHash.Add(buffer[0])
 	}
 
 	fromChunks, ok := chunks[r.rHash.Hash()]
 	if ok {
-		r.hasher.Write(buffer[i : i+chunkSize])
+		r.hasher.Write(buffer)
 		strongHash := r.hasher.Sum(nil)
 		foundStrongHashMatch = handleStrongHashCheck(fromChunks, strongHash, deltaIndex, handleDeltas)
 		r.hasher.Reset()
@@ -210,7 +225,7 @@ func (r *sync) processBytesForDelta(
 		handleDeltas(Delta{
 			Id:        deltaIndex,
 			Operation: NewData,
-			Data:      []byte{buffer[i]},
+			Data:      []byte{buffer[0]},
 		})
 
 		return 1, NewData
@@ -233,4 +248,14 @@ func handleStrongHashCheck(fromChunks []Chunk, strongHash []byte, deltaIndex uin
 	}
 
 	return false
+}
+
+func toHex(d []byte) string {
+	str := ""
+
+	for _, val := range d {
+		str += fmt.Sprintf("0x%s, ", hex.EncodeToString([]byte{val}))
+	}
+
+	return str
 }

@@ -50,7 +50,7 @@ func bytesToUint32(vals []byte) uint32 {
 	var result uint32 = 0
 	var base uint32 = 1
 
-	for i := 3; i >= 0; i-- {
+	for i := len(vals) - 1; i >= 0; i-- {
 		result += uint32(vals[i]) * base
 		base *= byteBase
 	}

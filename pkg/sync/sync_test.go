@@ -126,6 +126,37 @@ func Test_PassesForFilesSmallerThankChunkSize(t *testing.T) {
 	require.Equal(t, uint32(1), expectedOperationId)
 }
 
+func Test_SendsNewDataForCompletelyNewFile(t *testing.T) {
+	dataSize := 50
+	_, dataReader := dataGenerateRandom(dataSize)
+
+	chunks := []Chunk{}
+
+	s := New()
+	s.Signature(dataReader, func(c Chunk) {
+		chunks = append(chunks, c)
+	})
+
+	chunksAsBytes, err := SerializeChunks(chunks)
+	assert.Nil(t, err)
+
+	newFileSize := 80
+	newFileBytes, newFile := dataGenerateRandomWithSeed(newFileSize, 500)
+
+	var expectedOperationId uint32
+	receivedBytes := []byte{}
+	s.Delta(newFile, chunksAsBytes, func(d Delta) {
+		assert.Equal(t, NewData, d.Operation, "Invalid operation for operation id: %d", expectedOperationId)
+		require.Equal(t, expectedOperationId, d.Id, "Mismatch with expected operation id")
+		expectedOperationId += 1
+		receivedBytes = append(receivedBytes, d.Data...)
+	})
+
+	require.Equal(t, len(newFileBytes), len(receivedBytes))
+	require.Equal(t, newFileBytes, receivedBytes)
+	require.Equal(t, uint32(newFileSize), expectedOperationId)
+}
+
 func Test_DeltaInformsThatFileWasPrependedWithNewData(t *testing.T) {
 
 }
@@ -139,12 +170,16 @@ func Test_DeltaInformsThatFileWasInsertedWithNewData(t *testing.T) {
 }
 
 func dataGenerateRandom(size int) ([]byte, io.Reader) {
-	d := make([]byte, size)
-	rand.Seed(20)
+	return dataGenerateRandomWithSeed(size, 20)
+}
 
-	for i := range d {
-		d[i] = byte(rand.Int())
+func dataGenerateRandomWithSeed(size int, seed int64) ([]byte, io.Reader) {
+	buffer := make([]byte, size)
+	rand.Seed(seed)
+
+	for i := range buffer {
+		buffer[i] = byte(rand.Int())
 	}
 
-	return d, bytes.NewReader(d)
+	return buffer, bytes.NewReader(buffer)
 }

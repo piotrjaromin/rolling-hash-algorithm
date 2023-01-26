@@ -127,31 +127,43 @@ func (r *sync) Delta(data io.Reader, chunksReader io.Reader, handleDeltas DeltaH
 
 	// we read in chunks, it maybe that we cannot proce
 	bytesLeft := 0
+	bytesProcessed := 0
 
 	lastOperation := Init // Used to init rHash
 	var deltaIndex uint32 = 0
 
 	for {
 		n, err := data.Read(buffer[bytesLeft:])
-		if n == 0 || err == io.EOF {
-			break
-		}
-
-		if err != nil {
+		if err != io.EOF && err != nil {
 			return err
 		}
 
-		i := 0
 		// n should be total of available bytes
 		n = bytesLeft + n
-		for i <= n-r.chunkSizeInBytes {
-			bytesProcessed, operation := r.processBytesForDelta(
-				lastOperation, buffer[i:i+r.chunkSizeInBytes], chunks, deltaIndex, handleDeltas,
+		chunkSize := r.chunkSizeInBytes
+
+		if n < r.chunkSizeInBytes {
+			bytesProcessed = n
+			chunkSize = n
+		}
+
+		i := 0
+		for {
+			if n < i+chunkSize || n == 0 {
+				break
+			}
+
+			if lastOperation == Init {
+				r.rHash.AddBuffer(buffer[0:chunkSize])
+			} else {
+				r.rHash.AddBuffer(buffer[i : i+bytesProcessed])
+			}
+
+			bytesProcessed, lastOperation = r.processBytesForDelta(
+				lastOperation, buffer[i:i+chunkSize], chunks, deltaIndex, handleDeltas,
 			)
 
-			lastOperation = operation
 			i += bytesProcessed
-
 			deltaIndex += 1
 		}
 
@@ -163,22 +175,14 @@ func (r *sync) Delta(data io.Reader, chunksReader io.Reader, handleDeltas DeltaH
 		for j := 0; j < bytesLeft; j++ {
 			buffer[j] = buffer[i+j]
 		}
+
+		if n == 0 || err == io.EOF {
+			if bytesLeft == 0 {
+				return nil
+			}
+		}
 	}
 
-	// process left over bytes, kind of copy-paste of above
-	// probably could be moved into above loop
-	i := 0
-	for i < bytesLeft {
-		bytesProcessed, operation := r.processBytesForDelta(
-			lastOperation, buffer[i:bytesLeft], chunks, deltaIndex, handleDeltas,
-		)
-
-		lastOperation = operation
-		i += bytesProcessed
-		deltaIndex += 1
-	}
-
-	return nil
 }
 
 func chunksListToMap(chunks []Chunk) map[uint32][]Chunk {
@@ -201,15 +205,8 @@ func (r *sync) processBytesForDelta(
 	lastOperation Operation, buffer []byte,
 	chunks map[uint32][]Chunk, deltaIndex uint32, handleDeltas DeltaHandler,
 ) (int, Operation) {
-	chunkSize := len(buffer)
 
 	foundStrongHashMatch := false
-	if lastOperation == ExistingData || lastOperation == Init {
-		r.rHash.AddBuffer(buffer)
-	} else {
-		r.rHash.Add(buffer[0])
-	}
-
 	fromChunks, ok := chunks[r.rHash.Hash()]
 	if ok {
 		r.hasher.Write(buffer)
@@ -219,7 +216,7 @@ func (r *sync) processBytesForDelta(
 	}
 
 	if foundStrongHashMatch {
-		return chunkSize, ExistingData
+		return len(buffer), ExistingData
 	} else {
 		// if no match then send new bytes to be added to file
 		handleDeltas(Delta{

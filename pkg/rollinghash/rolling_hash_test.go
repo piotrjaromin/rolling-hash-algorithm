@@ -121,3 +121,20 @@ func Test_ReturnsDifferentValuesAfterAddBufferWasCalled(t *testing.T) {
 	secondHash := h1.Hash()
 	assert.NotEqual(t, initHash, secondHash)
 }
+
+func Test_IfCStartedWithDifferentValuesConvergesForSameInput(t *testing.T) {
+	input1 := []byte{34, 23, 34, 234}
+	input2 := []byte{111, 3, 55, 35}
+
+	commonBytes := []byte{1, 2, 3, 4}
+
+	h1 := New(4).AddBuffer(input1)
+	h2 := New(4).AddBuffer(input2)
+
+	for _, b := range commonBytes {
+		h1.Add(b)
+		h2.Add(b)
+	}
+
+	assert.Equal(t, h1.Hash(), h2.Hash())
+}

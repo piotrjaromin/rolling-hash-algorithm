@@ -7,7 +7,6 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -67,7 +66,7 @@ func Test_Signature(t *testing.T) {
 				chunks = append(chunks, c)
 			})
 
-			assert.Equal(t, test.expected, chunks)
+			require.Equal(t, test.expected, chunks)
 		})
 	}
 }
@@ -84,17 +83,17 @@ func Test_DeltaReturnsNoChangesWhenNewFileIsTheSameAsOld(t *testing.T) {
 	})
 
 	chunksAsBytes, err := SerializeChunks(chunks)
-	assert.Nil(t, err)
+	require.Nil(t, err)
 
 	var currentOperationId uint32
 	s.Delta(bytes.NewReader(data), chunksAsBytes, func(d Delta) {
-		assert.Equal(t, ExistingData, d.Operation, "Invalid operation for operation id: %d", currentOperationId)
+		require.Equal(t, ExistingData, d.Operation, "Invalid operation for operation id: %d", currentOperationId)
 		require.Equal(t, currentOperationId, d.Id, "Mismatch with expected operation id")
 		currentOperationId += 1
 	})
 
 	expectedLastOperationId := uint32(math.Ceil(float64(dataSize) / defaultChunkSize))
-	assert.Equal(t, expectedLastOperationId, currentOperationId, "expected %d to be %d", currentOperationId, expectedLastOperationId)
+	require.Equal(t, expectedLastOperationId, currentOperationId, "expected %d to be %d", currentOperationId, expectedLastOperationId)
 }
 
 func Test_PassesForFilesSmallerThankChunkSize(t *testing.T) {
@@ -113,11 +112,11 @@ func Test_PassesForFilesSmallerThankChunkSize(t *testing.T) {
 	_, sameDataReader := dataGenerateRandom(dataSize)
 
 	chunksAsBytes, err := SerializeChunks(chunks)
-	assert.Nil(t, err)
+	require.Nil(t, err)
 
 	var expectedOperationId uint32
 	s.Delta(sameDataReader, chunksAsBytes, func(d Delta) {
-		assert.Equal(t, ExistingData, d.Operation, "Invalid operation for operation id: %d", expectedOperationId)
+		require.Equal(t, ExistingData, d.Operation, "Expected ExistingData operation for operation id: %d", expectedOperationId)
 		require.Equal(t, expectedOperationId, d.Id, "Mismatch with expected operation id")
 		require.Equal(t, chunks[0].Id, bytesToUint32(d.Data))
 		expectedOperationId += 1
@@ -138,7 +137,7 @@ func Test_SendsNewDataForCompletelyNewFile(t *testing.T) {
 	})
 
 	chunksAsBytes, err := SerializeChunks(chunks)
-	assert.Nil(t, err)
+	require.Nil(t, err)
 
 	newFileSize := 80
 	newFileBytes, newFile := dataGenerateRandomWithSeed(newFileSize, 500)
@@ -146,7 +145,7 @@ func Test_SendsNewDataForCompletelyNewFile(t *testing.T) {
 	var expectedOperationId uint32
 	receivedBytes := []byte{}
 	s.Delta(newFile, chunksAsBytes, func(d Delta) {
-		assert.Equal(t, NewData, d.Operation, "Invalid operation for operation id: %d", expectedOperationId)
+		require.Equal(t, NewData, d.Operation, "Expected NewData operation for operation id: %d", expectedOperationId)
 		require.Equal(t, expectedOperationId, d.Id, "Mismatch with expected operation id")
 		expectedOperationId += 1
 		receivedBytes = append(receivedBytes, d.Data...)
@@ -158,11 +157,70 @@ func Test_SendsNewDataForCompletelyNewFile(t *testing.T) {
 }
 
 func Test_DeltaInformsThatFileWasPrependedWithNewData(t *testing.T) {
+	dataSize := 50
+	oldData, dataReader := dataGenerateRandom(dataSize)
 
+	chunks := []Chunk{}
+
+	s := New()
+	s.Signature(dataReader, func(c Chunk) {
+		chunks = append(chunks, c)
+	})
+
+	chunksAsBytes, err := SerializeChunks(chunks)
+	require.Nil(t, err)
+
+	prependedBytes := []byte{1, 2, 3, 4, 5, 6, 7, 8}
+	newFileBytes := append(prependedBytes, oldData...)
+	newFile := bytes.NewReader(newFileBytes)
+
+	var expectedOperationId uint32
+	s.Delta(newFile, chunksAsBytes, func(d Delta) {
+		if int(expectedOperationId) < len(prependedBytes) {
+			require.Equal(t, NewData, d.Operation, "Expected New data, for operation Id: %d", expectedOperationId)
+		} else {
+			require.Equal(t, ExistingData, d.Operation, "Expected existing(old) data for operation id: %d", expectedOperationId)
+		}
+		require.Equal(t, expectedOperationId, d.Id, "Mismatch with expected operation id")
+		expectedOperationId += 1
+	})
 }
 
-func Test_DeltaInformsThatFileWasSuffixedWithNewData(t *testing.T) {
+func Test_DeltaInformsThatFileWasPostfixedWithNewData(t *testing.T) {
+	dataSize := 50
+	oldData, dataReader := dataGenerateRandom(dataSize)
 
+	chunks := []Chunk{}
+
+	s := New()
+	s.Signature(dataReader, func(c Chunk) {
+		chunks = append(chunks, c)
+	})
+
+	chunksAsBytes, err := SerializeChunks(chunks)
+	require.Nil(t, err)
+
+	postfixedBytes := []byte{1, 2, 3, 4, 5, 6, 7, 8}
+	newFileBytes := append(oldData, postfixedBytes...)
+	newFile := bytes.NewReader(newFileBytes)
+
+	var expectedOperationId uint32
+
+	newPartId := len(oldData) / defaultChunkSize
+	newDataSize := 0
+	s.Delta(newFile, chunksAsBytes, func(d Delta) {
+		if int(expectedOperationId) >= newPartId {
+			require.Equal(t, NewData, d.Operation, "Expected New data, for operation Id: %d", expectedOperationId)
+			newDataSize += len(d.Data)
+		} else {
+			require.Equal(t, ExistingData, d.Operation, "Expected existing(old) data for operation id: %d", expectedOperationId)
+		}
+		require.Equal(t, expectedOperationId, d.Id, "Mismatch with expected operation id")
+		expectedOperationId += 1
+	})
+
+	// 8 for new data + 2 bytes from old file(file got extended and changed "end of old file")...
+	require.Equal(t, 10, newDataSize)
 }
 
 func Test_DeltaInformsThatFileWasInsertedWithNewData(t *testing.T) {

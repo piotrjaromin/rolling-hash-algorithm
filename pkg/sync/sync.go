@@ -35,8 +35,7 @@ type ChunkHandler func(Chunk)
 type Operation byte
 
 const (
-	Init Operation = iota
-	NewData
+	NewData Operation = iota
 	ExistingData
 )
 
@@ -129,7 +128,6 @@ func (r *sync) Delta(data io.Reader, chunksReader io.Reader, handleDeltas DeltaH
 	// we read in chunks, it maybe that we cannot proce
 	bytesLeft := 0
 
-	lastOperation := Init // Used to init rHash
 	var deltaIndex uint32 = 0
 
 	firstIter := true
@@ -166,9 +164,7 @@ func (r *sync) Delta(data io.Reader, chunksReader io.Reader, handleDeltas DeltaH
 				buffer = buffer[len(buffer)-n:]
 			}
 
-			matchFound := r.processBytesForDelta(
-				lastOperation, chunks, deltaIndex, buffer, handleDeltas,
-			)
+			matchFound := r.processBytesForDelta(chunks, deltaIndex, buffer, handleDeltas)
 
 			if matchFound {
 				i += chunkSize
@@ -214,7 +210,6 @@ func chunksListToMap(chunks []Chunk) map[uint32][]Chunk {
 
 // TODO better name....
 func (r *sync) processBytesForDelta(
-	lastOperation Operation,
 	chunks map[uint32][]Chunk, deltaIndex uint32, buffer []byte, handleDeltas DeltaHandler,
 ) bool {
 	fromChunks, ok := chunks[r.rHash.Hash()]

@@ -3,10 +3,11 @@ package rollinghash
 const moduloVal uint32 = 1 << 16
 
 type RollingHash struct {
-	buffer []byte
-	a      uint32
-	b      uint32
-	l      uint32
+	buffer             []byte
+	addOperationsCount int
+	a                  uint32
+	b                  uint32
+	l                  uint32
 }
 
 func New(bufferSize uint32) *RollingHash {
@@ -25,6 +26,7 @@ func (r *RollingHash) Add(b byte) *RollingHash {
 	}
 
 	r.buffer[r.l-1] = b
+	r.addOperationsCount += 1
 	return r
 }
 
@@ -39,9 +41,18 @@ func (r *RollingHash) Reset() {
 	r.buffer = make([]byte, r.l)
 	r.a = 0
 	r.b = 0
+	r.addOperationsCount = 0
 }
 
 func (r *RollingHash) Hash() uint32 {
 	s := r.a + moduloVal*r.b
 	return s
+}
+
+func (r RollingHash) Buffer() []byte {
+	if len(r.buffer) > r.addOperationsCount {
+		return append([]byte{}, r.buffer[len(r.buffer)-r.addOperationsCount:]...)
+	}
+
+	return append([]byte{}, r.buffer...)
 }

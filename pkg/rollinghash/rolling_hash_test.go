@@ -138,3 +138,34 @@ func Test_IfCStartedWithDifferentValuesConvergesForSameInput(t *testing.T) {
 
 	assert.Equal(t, h1.Hash(), h2.Hash())
 }
+
+func Test_BufferHasCorrectOrder(t *testing.T) {
+	input1 := []byte{34, 23, 82, 234}
+
+	h1 := New(4).AddBuffer(input1)
+	assert.Equal(t, input1, h1.Buffer())
+
+	var input2 byte = 54
+	h1.Add(input2)
+
+	expected2 := append(input1[1:], input2)
+	assert.Equal(t, expected2, h1.Buffer())
+
+	var input3 byte = 89
+	h1.Add(input3)
+
+	expected3 := append(expected2[1:], input3)
+	assert.Equal(t, expected3, h1.Buffer())
+
+	input4 := []byte{11, 76, 221}
+	h1.AddBuffer(input4)
+
+	expected4 := append(expected3[3:], input4...)
+	assert.Equal(t, expected4, h1.Buffer())
+
+	input5 := []byte{114, 169}
+	h1.AddBuffer(input5)
+
+	expected5 := append(expected4[2:], input5...)
+	assert.Equal(t, expected5, h1.Buffer())
+}

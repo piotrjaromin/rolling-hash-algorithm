@@ -3,7 +3,6 @@ package sync
 import (
 	"bytes"
 	"crypto"
-	"encoding/hex"
 	"fmt"
 	"hash"
 	"io"
@@ -67,6 +66,7 @@ func (r *sync) Signature(data io.Reader, handleChunks ChunkHandler) error {
 
 	bytesLeft := 0
 	var chunkIndex uint32 = 0
+	total := 0
 	for {
 		n, err := data.Read(buffer[bytesLeft:])
 
@@ -82,9 +82,12 @@ func (r *sync) Signature(data io.Reader, handleChunks ChunkHandler) error {
 		i := 0
 		for i <= n-r.chunkSizeInBytes {
 			rollingChunk := buffer[i : i+r.chunkSizeInBytes]
+
+			// fmt.Printf("Sig for %d:%d, first bytes %+v\n", total, total+r.chunkSizeInBytes, rollingChunk[0:16])
 			r.processChunk(chunkIndex, rollingChunk, handleChunks)
 			chunkIndex++
 			i += r.chunkSizeInBytes
+			total += i
 		}
 
 		// we need bytes from next chunk to process this
@@ -127,11 +130,11 @@ func (r *sync) Delta(data io.Reader, chunksReader io.Reader, handleDeltas DeltaH
 
 	// we read in chunks, it maybe that we cannot proce
 	bytesLeft := 0
-	bytesProcessed := 0
 
 	lastOperation := Init // Used to init rHash
 	var deltaIndex uint32 = 0
 
+	firstIter := true
 	for {
 		n, err := data.Read(buffer[bytesLeft:])
 		if err != io.EOF && err != nil {
@@ -143,9 +146,11 @@ func (r *sync) Delta(data io.Reader, chunksReader io.Reader, handleDeltas DeltaH
 		chunkSize := r.chunkSizeInBytes
 
 		if n < r.chunkSizeInBytes {
-			bytesProcessed = n
+			// bytesProcessed = n
 			chunkSize = n
 		}
+
+		fmt.Printf("Data read: %+v\n", buffer)
 
 		i := 0
 		for {
@@ -153,19 +158,30 @@ func (r *sync) Delta(data io.Reader, chunksReader io.Reader, handleDeltas DeltaH
 				break
 			}
 
-			var bufferForDelta []byte
-			if lastOperation == Init {
-				bufferForDelta = buffer[0:chunkSize]
+			if firstIter {
+				r.rHash.AddBuffer(buffer[0:chunkSize])
+				firstIter = false
 			} else {
-				bufferForDelta = buffer[i : i+bytesProcessed]
+				r.rHash.AddBuffer(buffer[i : i+chunkSize])
 			}
 
-			r.rHash.AddBuffer(bufferForDelta)
-			bytesProcessed, lastOperation = r.processBytesForDelta(
-				lastOperation, bufferForDelta, chunks, deltaIndex, handleDeltas,
+			buffer := r.rHash.Buffer()
+
+			if n < r.chunkSizeInBytes {
+				buffer = buffer[len(buffer)-n:]
+			}
+
+			fmt.Printf("Buffer is %+v\n", buffer)
+			matchFound := r.processBytesForDelta(
+				lastOperation, chunks, deltaIndex, buffer, handleDeltas,
 			)
 
-			i += bytesProcessed
+			if matchFound {
+				i += chunkSize
+			} else {
+				i += 1
+			}
+
 			deltaIndex += 1
 		}
 
@@ -204,10 +220,11 @@ func chunksListToMap(chunks []Chunk) map[uint32][]Chunk {
 
 // TODO better name....
 func (r *sync) processBytesForDelta(
-	lastOperation Operation, buffer []byte,
-	chunks map[uint32][]Chunk, deltaIndex uint32, handleDeltas DeltaHandler,
-) (int, Operation) {
+	lastOperation Operation,
+	chunks map[uint32][]Chunk, deltaIndex uint32, buffer []byte, handleDeltas DeltaHandler,
+) bool {
 	fromChunks, ok := chunks[r.rHash.Hash()]
+
 	if ok {
 		r.hasher.Reset()
 		r.hasher.Write(buffer)
@@ -221,7 +238,7 @@ func (r *sync) processBytesForDelta(
 					Operation: ExistingData,
 					Data:      uint32ToBytes(chunk.Id),
 				})
-				return len(buffer), ExistingData
+				return true
 			}
 		}
 
@@ -234,15 +251,5 @@ func (r *sync) processBytesForDelta(
 		Data:      []byte{buffer[0]},
 	})
 
-	return 1, NewData
-}
-
-func toHex(d []byte) string {
-	str := ""
-
-	for _, val := range d {
-		str += fmt.Sprintf("0x%s, ", hex.EncodeToString([]byte{val}))
-	}
-
-	return str
+	return false
 }

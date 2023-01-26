@@ -153,14 +153,16 @@ func (r *sync) Delta(data io.Reader, chunksReader io.Reader, handleDeltas DeltaH
 				break
 			}
 
+			var bufferForDelta []byte
 			if lastOperation == Init {
-				r.rHash.AddBuffer(buffer[0:chunkSize])
+				bufferForDelta = buffer[0:chunkSize]
 			} else {
-				r.rHash.AddBuffer(buffer[i : i+bytesProcessed])
+				bufferForDelta = buffer[i : i+bytesProcessed]
 			}
 
+			r.rHash.AddBuffer(bufferForDelta)
 			bytesProcessed, lastOperation = r.processBytesForDelta(
-				lastOperation, buffer[i:i+chunkSize], chunks, deltaIndex, handleDeltas,
+				lastOperation, bufferForDelta, chunks, deltaIndex, handleDeltas,
 			)
 
 			i += bytesProcessed
@@ -205,46 +207,34 @@ func (r *sync) processBytesForDelta(
 	lastOperation Operation, buffer []byte,
 	chunks map[uint32][]Chunk, deltaIndex uint32, handleDeltas DeltaHandler,
 ) (int, Operation) {
-
-	foundStrongHashMatch := false
 	fromChunks, ok := chunks[r.rHash.Hash()]
 	if ok {
+		r.hasher.Reset()
 		r.hasher.Write(buffer)
 		strongHash := r.hasher.Sum(nil)
-		foundStrongHashMatch = handleStrongHashCheck(fromChunks, strongHash, deltaIndex, handleDeltas)
-		r.hasher.Reset()
-	}
 
-	if foundStrongHashMatch {
-		return len(buffer), ExistingData
-	} else {
-		// if no match then send new bytes to be added to file
-		handleDeltas(Delta{
-			Id:        deltaIndex,
-			Operation: NewData,
-			Data:      []byte{buffer[0]},
-		})
-
-		return 1, NewData
-	}
-}
-
-func handleStrongHashCheck(fromChunks []Chunk, strongHash []byte, deltaIndex uint32, handleDeltas DeltaHandler) bool {
-	// iterate over list and check for strong hash
-	for _, chunk := range fromChunks {
-
-		// if strong hash match then send that original file contains data
-		if bytes.Equal(strongHash, chunk.StrongHash) {
-			handleDeltas(Delta{
-				Id:        deltaIndex,
-				Operation: ExistingData,
-				Data:      uint32ToBytes(chunk.Id),
-			})
-			return true
+		for _, chunk := range fromChunks {
+			// if strong hash match then send that original file contains data
+			if bytes.Equal(strongHash, chunk.StrongHash) {
+				handleDeltas(Delta{
+					Id:        deltaIndex,
+					Operation: ExistingData,
+					Data:      uint32ToBytes(chunk.Id),
+				})
+				return len(buffer), ExistingData
+			}
 		}
+
 	}
 
-	return false
+	// if no match then send new bytes to be added to file
+	handleDeltas(Delta{
+		Id:        deltaIndex,
+		Operation: NewData,
+		Data:      []byte{buffer[0]},
+	})
+
+	return 1, NewData
 }
 
 func toHex(d []byte) string {

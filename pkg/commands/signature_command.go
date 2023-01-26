@@ -59,7 +59,6 @@ func NewSignatureCommand() cli.Command {
 				return os.WriteFile(outputFile, serializedChunks, os.ModePerm)
 			}
 
-			fmt.Print(serializedChunks)
 			return nil
 		},
 	}

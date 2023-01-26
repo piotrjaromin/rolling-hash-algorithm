@@ -59,7 +59,6 @@ func NewDeltaCommand() cli.Command {
 				return os.WriteFile(outputFile, []byte(delta), os.ModePerm)
 			}
 
-			fmt.Print(delta)
 			return nil
 		},
 	}

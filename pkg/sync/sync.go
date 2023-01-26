@@ -82,8 +82,6 @@ func (r *sync) Signature(data io.Reader, handleChunks ChunkHandler) error {
 		i := 0
 		for i <= n-r.chunkSizeInBytes {
 			rollingChunk := buffer[i : i+r.chunkSizeInBytes]
-
-			// fmt.Printf("Sig for %d:%d, first bytes %+v\n", total, total+r.chunkSizeInBytes, rollingChunk[0:16])
 			r.processChunk(chunkIndex, rollingChunk, handleChunks)
 			chunkIndex++
 			i += r.chunkSizeInBytes
@@ -146,11 +144,8 @@ func (r *sync) Delta(data io.Reader, chunksReader io.Reader, handleDeltas DeltaH
 		chunkSize := r.chunkSizeInBytes
 
 		if n < r.chunkSizeInBytes {
-			// bytesProcessed = n
 			chunkSize = n
 		}
-
-		fmt.Printf("Data read: %+v\n", buffer)
 
 		i := 0
 		for {
@@ -171,7 +166,6 @@ func (r *sync) Delta(data io.Reader, chunksReader io.Reader, handleDeltas DeltaH
 				buffer = buffer[len(buffer)-n:]
 			}
 
-			fmt.Printf("Buffer is %+v\n", buffer)
 			matchFound := r.processBytesForDelta(
 				lastOperation, chunks, deltaIndex, buffer, handleDeltas,
 			)

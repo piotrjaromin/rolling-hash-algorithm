@@ -178,14 +178,12 @@ func Test_DeltaInformsThatFileWasPrependedWithNewData(t *testing.T) {
 	var expectedOperationId uint32
 
 	s.Delta(newFile, chunksAsBytes, func(d Delta) {
-		// if int(expectedOperationId) < 23 {
-		// 	// if int(expectedOperationId) < len(prependedBytes)+defaultChunkSize {
-		// 	require.Equal(t, NewData, d.Operation, "Expected New data, for operation Id: %d", expectedOperationId)
-		// } else {
-		// 	require.Equal(t, ExistingData, d.Operation, "Expected existing(old) data for operation id: %d", expectedOperationId)
-		// }
+		if int(expectedOperationId) < len(prependedBytes) {
+			require.Equal(t, NewData, d.Operation, "Expected New data, for operation Id: %d", expectedOperationId)
+		} else {
+			require.Equal(t, ExistingData, d.Operation, "Expected existing(old) data for operation id: %d", expectedOperationId)
+		}
 
-		// require.Equal(t, NewData, d.Operation, "Expected New data, for operation Id: %d", expectedOperationId)
 		require.Equal(t, expectedOperationId, d.Id, "Mismatch with expected operation id")
 		expectedOperationId += 1
 	})

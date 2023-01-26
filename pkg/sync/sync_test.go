@@ -176,10 +176,12 @@ func Test_DeltaInformsThatFileWasPrependedWithNewData(t *testing.T) {
 	newFile := bytes.NewReader(newFileBytes)
 
 	var expectedOperationId uint32
+	newDataSize := 0
 
 	s.Delta(newFile, chunksAsBytes, func(d Delta) {
 		if int(expectedOperationId) < len(prependedBytes) {
 			require.Equal(t, NewData, d.Operation, "Expected New data, for operation Id: %d", expectedOperationId)
+			newDataSize += len(d.Data)
 		} else {
 			require.Equal(t, ExistingData, d.Operation, "Expected existing(old) data for operation id: %d", expectedOperationId)
 		}
@@ -187,6 +189,8 @@ func Test_DeltaInformsThatFileWasPrependedWithNewData(t *testing.T) {
 		require.Equal(t, expectedOperationId, d.Id, "Mismatch with expected operation id")
 		expectedOperationId += 1
 	})
+
+	require.Equal(t, 8, newDataSize)
 }
 
 func Test_DeltaInformsThatFileWasPostfixedWithNewData(t *testing.T) {
@@ -227,7 +231,44 @@ func Test_DeltaInformsThatFileWasPostfixedWithNewData(t *testing.T) {
 }
 
 func Test_DeltaInformsThatFileWasInsertedWithNewData(t *testing.T) {
+	dataSize := 500
+	oldData, dataReader := dataGenerateRandom(dataSize)
 
+	chunks := []Chunk{}
+
+	s := New()
+	s.Signature(dataReader, func(c Chunk) {
+		chunks = append(chunks, c)
+	})
+
+	chunksAsBytes, err := SerializeChunks(chunks)
+	require.Nil(t, err)
+
+	middleBytes := []byte{1, 2, 3, 4, 5, 6, 7, 8}
+	newFileBytes := append(oldData[:30], middleBytes...)
+	newFileBytes = append(newFileBytes, oldData[30:]...)
+	newFile := bytes.NewReader(newFileBytes)
+
+	var expectedOperationId uint32
+	var lastOperation Operation
+	newDataSize := 0
+
+	s.Delta(newFile, chunksAsBytes, func(d Delta) {
+		if expectedOperationId == 0 {
+			require.Equal(t, ExistingData, d.Operation)
+		}
+
+		if d.Operation == NewData {
+			newDataSize += len(d.Data)
+		}
+
+		require.Equal(t, expectedOperationId, d.Id, "Mismatch with expected operation id")
+		expectedOperationId += 1
+		lastOperation = d.Operation
+	})
+
+	require.Equal(t, ExistingData, lastOperation)
+	require.Equal(t, 40, newDataSize)
 }
 
 func dataGenerateRandom(size int) ([]byte, io.Reader) {

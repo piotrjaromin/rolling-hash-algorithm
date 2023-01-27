@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"io/ioutil"
 	"os"
 
 	"github.com/piotrjaromin/rolling-hash-algorithm/pkg/sync"
@@ -11,7 +12,7 @@ import (
 func NewDeltaCommand() cli.Command {
 	return cli.Command{
 		Name:  "delta",
-		Usage: "",
+		Usage: "Creates delta file with list of changes based in inputFile and signatureFile",
 		Flags: []cli.Flag{
 			cli.StringFlag{
 				Name:     "inputFile",
@@ -53,12 +54,22 @@ func NewDeltaCommand() cli.Command {
 				return fmt.Errorf("error while calculating delta. %w", err)
 			}
 
-			delta := "TODO"
-			if c.IsSet("deltaFile") {
-				outputFile := c.String("deltaFile")
-				return os.WriteFile(outputFile, []byte(delta), os.ModePerm)
+			serializedDeltaReader, err := sync.SerializeDeltas(deltas)
+			if err != nil {
+				return fmt.Errorf("unable to serialize deltas chunks. %w", err)
 			}
 
+			serializedDeltas, err := ioutil.ReadAll(serializedDeltaReader)
+			if err != nil {
+				return fmt.Errorf("unable to read serialized deltas chunks. %w", err)
+			}
+
+			if c.IsSet("deltaFile") {
+				outputFile := c.String("deltaFile")
+				return os.WriteFile(outputFile, []byte(serializedDeltas), os.ModePerm)
+			}
+
+			fmt.Printf("%+v", serializedDeltas)
 			return nil
 		},
 	}

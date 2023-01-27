@@ -34,6 +34,31 @@ func SerializeChunks(chunks []Chunk) (io.Reader, error) {
 	return &buffer, nil
 }
 
+// could be generics
+func DeserializeDelta(deltasReader io.Reader) ([]Delta, error) {
+	deltas := []Delta{}
+
+	enc := gob.NewDecoder(deltasReader)
+	err := enc.Decode(&deltas)
+	if err != nil {
+		return deltas, err
+	}
+
+	return deltas, nil
+}
+
+func SerializeDeltas(deltas []Delta) (io.Reader, error) {
+	var buffer bytes.Buffer
+	enc := gob.NewEncoder(&buffer)
+
+	err := enc.Encode(deltas)
+	if err != nil {
+		return nil, err
+	}
+
+	return &buffer, nil
+}
+
 func uint32ToBytes(val uint32) []byte {
 	data := [4]byte{}
 

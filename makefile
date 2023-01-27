@@ -11,4 +11,4 @@ test:
 	go test ./...
 
 build:
-	go build -o OUT ${IN}
+	go build -o ${OUT} ${IN}

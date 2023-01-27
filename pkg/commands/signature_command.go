@@ -53,12 +53,12 @@ func NewSignatureCommand() cli.Command {
 				return fmt.Errorf("unable to read serialized data chunks. %w", err)
 			}
 
-			if c.IsSet("outputFile") {
-				outputFile := c.String("outputFile")
-
+			if c.IsSet("signatureFile") {
+				outputFile := c.String("signatureFile")
 				return os.WriteFile(outputFile, serializedChunks, os.ModePerm)
 			}
 
+			fmt.Printf("%+v", serializedChunks)
 			return nil
 		},
 	}

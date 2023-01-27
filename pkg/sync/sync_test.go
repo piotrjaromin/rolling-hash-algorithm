@@ -271,6 +271,33 @@ func Test_DeltaInformsThatFileWasInsertedWithNewData(t *testing.T) {
 	require.Equal(t, 40, newDataSize)
 }
 
+func Test_DeltaInformsThatNothingChangedWhenOrderOfBytesWasMixed(t *testing.T) {
+	dataSize := 32
+	firstHalf, _ := dataGenerateRandomWithSeed(dataSize, 10)
+	secondHalf, _ := dataGenerateRandomWithSeed(dataSize, 40)
+
+	oldFile := bytes.NewReader(append(firstHalf, secondHalf...))
+	chunks := []Chunk{}
+
+	s := New()
+	s.Signature(oldFile, func(c Chunk) {
+		chunks = append(chunks, c)
+	})
+
+	chunksAsBytes, err := SerializeChunks(chunks)
+	require.Nil(t, err)
+
+	newFile := bytes.NewReader(append(secondHalf, firstHalf...))
+
+	var expectedOperationId uint32
+	s.Delta(newFile, chunksAsBytes, func(d Delta) {
+		require.Equal(t, ExistingData, d.Operation)
+		require.Equal(t, expectedOperationId, d.Id, "Mismatch with expected operation id")
+		expectedOperationId += 1
+	})
+
+}
+
 func dataGenerateRandom(size int) ([]byte, io.Reader) {
 	return dataGenerateRandomWithSeed(size, 20)
 }

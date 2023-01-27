@@ -3,7 +3,7 @@ package sync
 import (
 	"bytes"
 
-	// using gob for simplicity, but we could also write bytes directly (Takes less space)
+	// using gob for simplicity, but we could also write bytes directly (Takes less space) or use protobuf
 	"encoding/gob"
 	"io"
 )

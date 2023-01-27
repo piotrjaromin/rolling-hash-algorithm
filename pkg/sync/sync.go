@@ -12,7 +12,7 @@ import (
 	_ "golang.org/x/crypto/md4"
 )
 
-// not efficient size but for simplicity
+// not efficient sizes but for simplicity
 const defaultChunkSize = 16
 const defaultBufferMultiplier = 3
 
@@ -164,9 +164,9 @@ func (r *sync) Delta(data io.Reader, chunksReader io.Reader, handleDeltas DeltaH
 				buffer = buffer[len(buffer)-n:]
 			}
 
-			matchFound := r.processBytesForDelta(chunks, deltaIndex, buffer, handleDeltas)
+			existingDataFound := r.processBytesForDelta(chunks, deltaIndex, buffer, handleDeltas)
 
-			if matchFound {
+			if existingDataFound {
 				i += chunkSize
 			} else {
 				i += 1
@@ -177,9 +177,7 @@ func (r *sync) Delta(data io.Reader, chunksReader io.Reader, handleDeltas DeltaH
 
 		bytesLeft = n - i
 
-		// Two scenarios
-		// 1. reading data, this is last iteration and there is leftover
-		// 2. first iteration with chunk smaller than whole thing
+		// reading data, this is last iteration and there is leftover
 		for j := 0; j < bytesLeft; j++ {
 			buffer[j] = buffer[i+j]
 		}
@@ -208,7 +206,6 @@ func chunksListToMap(chunks []Chunk) map[uint32][]Chunk {
 	return mappedChunks
 }
 
-// TODO better name....
 func (r *sync) processBytesForDelta(
 	chunks map[uint32][]Chunk, deltaIndex uint32, buffer []byte, handleDeltas DeltaHandler,
 ) bool {
@@ -230,10 +227,12 @@ func (r *sync) processBytesForDelta(
 				return true
 			}
 		}
-
 	}
 
 	// if no match then send new bytes to be added to file
+	// to we send one byte, but we should 'collect' them
+	// and send only when Operation type changes (from NewData to ExistingData)
+	// in order to save space
 	handleDeltas(Delta{
 		Id:        deltaIndex,
 		Operation: NewData,

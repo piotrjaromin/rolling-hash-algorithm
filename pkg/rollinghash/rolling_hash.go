@@ -54,5 +54,8 @@ func (r RollingHash) Buffer() []byte {
 		return append([]byte{}, r.buffer[len(r.buffer)-r.addOperationsCount:]...)
 	}
 
+	// maybe we should consider creating internal buffer
+	// if someones edits it it may break rolling hash internal state
+	// but will be faster
 	return append([]byte{}, r.buffer...)
 }
